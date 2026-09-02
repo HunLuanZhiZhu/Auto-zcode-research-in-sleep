@@ -1,0 +1,8 @@
+# Auto-claude-code-research-in-sleep 为上游 pristine vendor（内含独立 .git）
+# 本地需自行克隆：git clone https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep.git
+Auto-claude-code-research-in-sleep/
+
+# 运行产物与本地论文测试目录
+.aris/
+zcode-test-paper/
+*.log

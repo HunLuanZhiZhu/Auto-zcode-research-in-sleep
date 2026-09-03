@@ -710,6 +710,7 @@ def update_agents_md(project_path: Path, repo: Path, installed_names: list[str],
         f"ARIS skills installed in this project: {count} entries.\n"
         f"Manifest: `.aris/{MANIFEST_NAME}` (lists every skill and its upstream target).\n"
         f"For ARIS workflows, prefer the project-local skills under `.zcode/skills/` over global skills.\n"
+        f"Reviewer routing: under ZCode, always prefer `Task(agent_type: gpt-reviewer)` (model and reasoning already configured) over Codex MCP; use Codex MCP only when the user explicitly requests it or when `gpt-reviewer` is unavailable.\n"
         f"Do not modify or delete files inside any skill that is a symlink (symlinks point into `{repo}`).\n"
         f"Update with: `python {repo.parent / 'init.py'} --reconcile`  (re-runnable; reconciles new/removed skills).\n"
         f"{BLOCK_END}"
@@ -721,7 +722,7 @@ def update_agents_md(project_path: Path, repo: Path, installed_names: list[str],
         if len(matches) > 1:
             warn(f"multiple ARIS blocks found in {DOC_FILE_NAME}; skipping update")
             return
-        new_content = pattern.sub(new_block, original)
+        new_content = pattern.sub(lambda _: new_block, original)
     else:
         new_content = original
         if new_content and not new_content.endswith("\n"):

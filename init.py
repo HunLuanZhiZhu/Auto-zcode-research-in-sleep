@@ -711,6 +711,7 @@ def update_agents_md(project_path: Path, repo: Path, installed_names: list[str],
         f"Manifest: `.aris/{MANIFEST_NAME}` (lists every skill and its upstream target).\n"
         f"For ARIS workflows, prefer the project-local skills under `.zcode/skills/` over global skills.\n"
         f"Reviewer routing: under ZCode, always prefer `Task(agent_type: gpt-reviewer)` (model and reasoning already configured) over Codex MCP; use Codex MCP only when the user explicitly requests it or when `gpt-reviewer` is unavailable.\n"
+        f"Long-run rule (ZCode-only): any task expected to exceed ~10 minutes (e.g. model training, large sweeps) MUST run via `Bash(run_in_background: true)`; either rely on the tool's persisted output log or redirect stdout/stderr to a `logs/` file yourself — never leave output only in the live session. Every log line MUST carry a wall-clock timestamp precise to the second (`%Y-%m-%d %H:%M:%S`); the main agent judges background-task state by reading the log tail, not by the session being alive.\n"
         f"Do not modify or delete files inside any skill that is a symlink (symlinks point into `{repo}`).\n"
         f"Update with: `python {repo.parent / 'init.py'} --reconcile`  (re-runnable; reconciles new/removed skills).\n"
         f"{BLOCK_END}"
@@ -788,6 +789,25 @@ PATCH_TARGET_SKILLS = [
 ]
 
 
+def _body_start(text: str) -> int:
+    """Offset where the SKILL.md body starts (after the frontmatter close).
+
+    Frontmatter is `---` on line 1 through the next `---` line. Markers found
+    before that (e.g. in the allowed-tools line) must not be patch targets.
+    Returns 0 when no frontmatter is detected.
+    """
+    if not text.startswith("---"):
+        return 0
+    nl = text.find("\n")
+    if nl == -1:
+        return 0
+    close = text.find("\n---", nl)
+    if close == -1:
+        return 0
+    line_end = text.find("\n", close + 1)
+    return line_end + 1 if line_end != -1 else len(text)
+
+
 def _gpt_reviewer_block() -> str:
     return (
         f"\n{ZCODE_PATCH_MARKER}\n"
@@ -843,6 +863,10 @@ def apply_zcode_skill_patches(project_path: Path, dry_run: bool):
         # Strategy: after the "If REVIEWER_BACKEND = `codex`:" block (or `manual` block),
         # insert an additional ZCode branch. Use a marker so future runs are idempotent.
         patch_block = _gpt_reviewer_block()
+        # Insertion point must be AFTER the frontmatter close (second `---` line):
+        # markers like mcp__manual_review__review_reply may appear inside the
+        # frontmatter's allowed-tools line, and patching there corrupts YAML.
+        body_start = _body_start(text)
         # Insertion point: after the first REVIEWER_BACKEND/mcp__codex__codex occurrence, or after Reviewer Calling Convention header.
         inserted = False
         # Prefer inserting after the manual branch if present, otherwise after codex branch
@@ -853,7 +877,7 @@ def apply_zcode_skill_patches(project_path: Path, dry_run: bool):
             "mcp__codex__codex",
         ]
         for marker in markers:
-            idx = text.find(marker)
+            idx = text.find(marker, body_start)
             if idx != -1:
                 # Find end of that block (next heading or next "If REVIEWER" line)
                 # Insert right after the line containing the marker
@@ -870,7 +894,7 @@ def apply_zcode_skill_patches(project_path: Path, dry_run: bool):
         if not inserted:
             # Fallback: append before the next ## heading after Reviewer Calling Convention
             fallback_marker = "## Reviewer Calling Convention"
-            idx = text.find(fallback_marker)
+            idx = text.find(fallback_marker, body_start)
             if idx != -1:
                 next_heading = text.find("\n## ", idx + len(fallback_marker))
                 insert_at = next_heading if next_heading != -1 else len(text)

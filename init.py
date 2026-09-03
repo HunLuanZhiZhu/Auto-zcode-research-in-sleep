@@ -10,7 +10,7 @@ own copy and can be modified independently (hard copy, not symlink):
 Managed entries are tracked in .aris/installed-skills.txt. The script never
 replaces real files or user-owned skill directories; conflicts must be resolved
 explicitly. Also copies .aris/tools from vendor/tools for the Canonical
-Helper chain (Layer 1) and copies .zcode/agents/aris-agent.md.
+Helper chain (Layer 1) and copies .zcode/agents/gpt-reviewer.md.
 
 This is the ZCode port of tools/install_aris.sh — skills/agents are .zcode
 (ZCode-native), tools/manifest/global-pointer are .aris (ARIS-native, as SKILL.md expects).
@@ -632,6 +632,17 @@ def ensure_agents(project_path: Path, repo: Path, dry_run: bool):
         if not src_dir.is_dir():
             return
     dst_dir = project_path / ".zcode" / "agents"
+    # Remove legacy aris-agent.md left by older installs (renamed to gpt-reviewer.md).
+    legacy = dst_dir / "aris-agent.md"
+    if legacy.is_file() or is_symlink(legacy):
+        if dry_run:
+            print("  (dry-run) rm .zcode/agents/aris-agent.md (legacy, renamed to gpt-reviewer.md)")
+        else:
+            try:
+                remove_link(legacy)
+                print("  - .zcode/agents/aris-agent.md (legacy, renamed to gpt-reviewer.md)")
+            except Exception as e:
+                warn(f"cannot remove legacy .zcode/agents/aris-agent.md: {e}")
     for src in src_dir.glob("*.md"):
         if not src.is_file():
             continue
@@ -736,10 +747,13 @@ def update_agents_md(project_path: Path, repo: Path, installed_names: list[str],
     print(f"  ✓ updated {DOC_FILE_NAME} (ARIS managed block, {count} skills)")
 
 
-ZCODE_PATCH_MARKER = "<!-- ZCODE:ARIS-AGENT -->"
+ZCODE_PATCH_MARKER = "<!-- ZCODE:GPT-REVIEWER -->"
+LEGACY_PATCH_MARKER = "<!-- ZCODE:ARIS-AGENT -->"
 
-# Skills that call an external reviewer — these get an additional aris-agent branch.
-# Keep this list in sync with vendor/skills that contain mcp__codex__codex / mcp__manual_review.
+# Skills that directly invoke an external reviewer (contain an `mcp__codex__codex:`
+# call block) — these get an additional gpt-reviewer branch. Plus experiment-audit
+# (orchestrator-type, kept from the original 10 for continuity).
+# Machine-scanned from vendor/skills: every dir with an `mcp__codex__codex:` block.
 PATCH_TARGET_SKILLS = [
     "research-review",
     "proof-checker",
@@ -751,16 +765,47 @@ PATCH_TARGET_SKILLS = [
     "idea-creator",
     "auto-review-loop",
     "research-refine",
+    "paper-writing",
+    "paper-plan",
+    "paper-write",
+    "paper-figure",
+    "auto-paper-improvement-loop",
+    "paper-slides",
+    "slides-polish",
+    "claims-drafting",
+    "patent-novelty-check",
+    "patent-review",
+    "invention-structuring",
+    "specification-writing",
+    "experiment-bridge",
+    "ablation-planner",
+    "result-to-claim",
+    "figure-spec",
+    "novelty-check",
+    "training-check",
+    "meta-optimize",
 ]
 
 
+def _gpt_reviewer_block() -> str:
+    return (
+        f"\n{ZCODE_PATCH_MARKER}\n"
+        f"**If `Task(agent_type: gpt-reviewer)` is available (ZCode default):**\n"
+        f"  Use `Task(agent_type: gpt-reviewer, prompt: \"<same prompt that would go to codex>\")`.\n"
+        f"  No model or reasoning parameters needed per call — the reviewer model is treated as sharing the agent's name.\n"
+        f"  Hard `mcp__codex__codex` call remains as fallback when `gpt-reviewer` is unavailable.\n"
+    )
+
+
 def apply_zcode_skill_patches(project_path: Path, dry_run: bool):
-    """Inline patches: add aris-agent reviewer branch to the copied SKILL.md files.
+    """Inline patches: add gpt-reviewer branch to the copied SKILL.md files.
     Runs after hard copy, before manifest commit.
     Idempotent: checks for ZCODE_PATCH_MARKER before patching.
+    Migrates legacy ZCODE:ARIS-AGENT blocks to ZCODE:GPT-REVIEWER in place.
     Vendor skills are never modified."""
     patched = 0
     skipped = 0
+    migrated = 0
     for skill_name in PATCH_TARGET_SKILLS:
         skill_file = project_path / ".zcode" / "skills" / skill_name / "SKILL.md"
         if not skill_file.is_file():
@@ -772,16 +817,31 @@ def apply_zcode_skill_patches(project_path: Path, dry_run: bool):
         if ZCODE_PATCH_MARKER in text:
             skipped += 1
             continue
-        # Find the Reviewer Calling Convention section and append an aris-agent branch.
+        if LEGACY_PATCH_MARKER in text:
+            # Replace the legacy aris-agent block with the gpt-reviewer block.
+            legacy_block = (
+                f"\n{LEGACY_PATCH_MARKER}\n"
+                f"**If `Task(agent_type: aris-agent)` is available (ZCode default):**\n"
+                f"  Use `Task(agent_type: aris-agent, prompt: \"<same prompt that would go to codex>\")`.\n"
+                f"  No model or reasoning parameters needed per call — user has configured the reviewer model independently.\n"
+                f"  Hard `mcp__codex__codex` call remains as fallback when `aris-agent` is unavailable.\n"
+            )
+            if legacy_block in text:
+                if dry_run:
+                    print(f"  (dry-run) would migrate {skill_name}/SKILL.md (aris-agent -> gpt-reviewer)")
+                    continue
+                text = text.replace(legacy_block, _gpt_reviewer_block(), 1)
+                skill_file.write_text(text, encoding="utf-8")
+                migrated += 1
+                continue
+            # Legacy marker present but block text differs (user edited) — leave alone.
+            warn(f"{skill_name}/SKILL.md has legacy marker with custom text; leaving alone")
+            skipped += 1
+            continue
+        # Find the Reviewer Calling Convention section and append a gpt-reviewer branch.
         # Strategy: after the "If REVIEWER_BACKEND = `codex`:" block (or `manual` block),
         # insert an additional ZCode branch. Use a marker so future runs are idempotent.
-        patch_block = (
-            f"\n{ZCODE_PATCH_MARKER}\n"
-            f"**If `Task(agent_type: aris-agent)` is available (ZCode default):**\n"
-            f"  Use `Task(agent_type: aris-agent, prompt: \"<same prompt that would go to codex>\")`.\n"
-            f"  No model or reasoning parameters needed per call — user has configured the reviewer model independently.\n"
-            f"  Hard `mcp__codex__codex` call remains as fallback when `aris-agent` is unavailable.\n"
-        )
+        patch_block = _gpt_reviewer_block()
         # Insertion point: after the first REVIEWER_BACKEND/mcp__codex__codex occurrence, or after Reviewer Calling Convention header.
         inserted = False
         # Prefer inserting after the manual branch if present, otherwise after codex branch
@@ -828,8 +888,8 @@ def apply_zcode_skill_patches(project_path: Path, dry_run: bool):
                     patched += 1
                 else:
                     print(f"  (dry-run) would patch {skill_name}/SKILL.md (append)")
-    if patched or skipped:
-        print(f"  Patched {patched} SKILL.md files for ZCode aris-agent ({skipped} already patched, {len(PATCH_TARGET_SKILLS)} targets)")
+    if patched or skipped or migrated:
+        print(f"  Patched {patched} SKILL.md files for ZCode gpt-reviewer ({skipped} already patched, {migrated} migrated from aris-agent, {len(PATCH_TARGET_SKILLS)} targets)")
 
 
 def ensure_global_pointer(repo: Path, dry_run: bool):

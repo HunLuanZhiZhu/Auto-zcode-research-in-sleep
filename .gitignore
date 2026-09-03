@@ -6,3 +6,5 @@ Auto-claude-code-research-in-sleep/
 .aris/
 zcode-test-paper/
 *.log
+__pycache__/
+*.pyc

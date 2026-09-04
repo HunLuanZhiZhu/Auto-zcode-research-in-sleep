@@ -632,17 +632,18 @@ def ensure_agents(project_path: Path, repo: Path, dry_run: bool):
         if not src_dir.is_dir():
             return
     dst_dir = project_path / ".zcode" / "agents"
-    # Remove legacy aris-agent.md left by older installs (renamed to gpt-reviewer.md).
-    legacy = dst_dir / "aris-agent.md"
-    if legacy.is_file() or is_symlink(legacy):
-        if dry_run:
-            print("  (dry-run) rm .zcode/agents/aris-agent.md (legacy, renamed to gpt-reviewer.md)")
-        else:
-            try:
-                remove_link(legacy)
-                print("  - .zcode/agents/aris-agent.md (legacy, renamed to gpt-reviewer.md)")
-            except Exception as e:
-                warn(f"cannot remove legacy .zcode/agents/aris-agent.md: {e}")
+    # Remove legacy agent files left by older installs (renamed to gpt-worker.md).
+    for legacy_name in ("aris-agent.md", "gpt-reviewer.md"):
+        legacy = dst_dir / legacy_name
+        if legacy.is_file() or is_symlink(legacy):
+            if dry_run:
+                print(f"  (dry-run) rm .zcode/agents/{legacy_name} (legacy, renamed to gpt-worker.md)")
+            else:
+                try:
+                    remove_link(legacy)
+                    print(f"  - .zcode/agents/{legacy_name} (legacy, renamed to gpt-worker.md)")
+                except Exception as e:
+                    warn(f"cannot remove legacy .zcode/agents/{legacy_name}: {e}")
     for src in src_dir.glob("*.md"):
         if not src.is_file():
             continue
@@ -710,7 +711,7 @@ def update_agents_md(project_path: Path, repo: Path, installed_names: list[str],
         f"ARIS skills installed in this project: {count} entries.\n"
         f"Manifest: `.aris/{MANIFEST_NAME}` (lists every skill and its upstream target).\n"
         f"For ARIS workflows, prefer the project-local skills under `.zcode/skills/` over global skills.\n"
-        f"Reviewer routing: under ZCode, always prefer `Task(agent_type: gpt-reviewer)` (model and reasoning already configured) over Codex MCP; use Codex MCP only when the user explicitly requests it or when `gpt-reviewer` is unavailable.\n"
+        f"Reviewer routing: under ZCode, always prefer `Task(agent_type: gpt-worker)` (model and reasoning already configured) over Codex MCP; use Codex MCP only when the user explicitly requests it or when `gpt-worker` is unavailable.\n"
         f"Long-run rule (ZCode-only): any task expected to exceed ~10 minutes (e.g. model training, large sweeps) MUST run via `Bash(run_in_background: true)`; either rely on the tool's persisted output log or redirect stdout/stderr to a `logs/` file yourself — never leave output only in the live session. Every log line MUST carry a wall-clock timestamp precise to the second (`%Y-%m-%d %H:%M:%S`); the main agent judges background-task state by reading the log tail, not by the session being alive.\n"
         f"Do not modify or delete files inside any skill that is a symlink (symlinks point into `{repo}`).\n"
         f"Update with: `python {repo.parent / 'init.py'} --reconcile`  (re-runnable; reconciles new/removed skills).\n"
@@ -749,11 +750,11 @@ def update_agents_md(project_path: Path, repo: Path, installed_names: list[str],
     print(f"  ✓ updated {DOC_FILE_NAME} (ARIS managed block, {count} skills)")
 
 
-ZCODE_PATCH_MARKER = "<!-- ZCODE:GPT-REVIEWER -->"
-LEGACY_PATCH_MARKER = "<!-- ZCODE:ARIS-AGENT -->"
+ZCODE_PATCH_MARKER = "<!-- ZCODE:GPT-WORKER -->"
+LEGACY_PATCH_MARKERS = ("<!-- ZCODE:ARIS-AGENT -->", "<!-- ZCODE:GPT-REVIEWER -->")
 
 # Skills that directly invoke an external reviewer (contain an `mcp__codex__codex:`
-# call block) — these get an additional gpt-reviewer branch. Plus experiment-audit
+# call block) — these get an additional gpt-worker branch. Plus experiment-audit
 # (orchestrator-type, kept from the original 10 for continuity).
 # Machine-scanned from vendor/skills: every dir with an `mcp__codex__codex:` block.
 PATCH_TARGET_SKILLS = [
@@ -808,25 +809,47 @@ def _body_start(text: str) -> int:
     return line_end + 1 if line_end != -1 else len(text)
 
 
-def _gpt_reviewer_block() -> str:
+def _gpt_worker_block() -> str:
     return (
         f"\n{ZCODE_PATCH_MARKER}\n"
-        f"**If `Task(agent_type: gpt-reviewer)` is available (ZCode default):**\n"
-        f"  Use `Task(agent_type: gpt-reviewer, prompt: \"<same prompt that would go to codex>\")`.\n"
+        f"**If `Task(agent_type: gpt-worker)` is available (ZCode default):**\n"
+        f"  Use `Task(agent_type: gpt-worker, prompt: \"<same prompt that would go to codex>\")`.\n"
         f"  No model or reasoning parameters needed per call — the reviewer model is treated as sharing the agent's name.\n"
-        f"  Hard `mcp__codex__codex` call remains as fallback when `gpt-reviewer` is unavailable.\n"
+        f"  Hard `mcp__codex__codex` call remains as fallback when `gpt-worker` is unavailable.\n"
     )
 
 
+# Kept under the old name so existing imports keep working.
+def _gpt_reviewer_block() -> str:
+    return _gpt_worker_block()
+
+
 def apply_zcode_skill_patches(project_path: Path, dry_run: bool):
-    """Inline patches: add gpt-reviewer branch to the copied SKILL.md files.
+    """Inline patches: add gpt-worker branch to the copied SKILL.md files.
     Runs after hard copy, before manifest commit.
     Idempotent: checks for ZCODE_PATCH_MARKER before patching.
-    Migrates legacy ZCODE:ARIS-AGENT blocks to ZCODE:GPT-REVIEWER in place.
+    Migrates legacy ZCODE:ARIS-AGENT / ZCODE:GPT-REVIEWER blocks in place.
     Vendor skills are never modified."""
     patched = 0
     skipped = 0
     migrated = 0
+    new_block = _gpt_worker_block()
+    legacy_blocks = [
+        (
+            f"\n{LEGACY_PATCH_MARKERS[0]}\n"
+            f"**If `Task(agent_type: aris-agent)` is available (ZCode default):**\n"
+            f"  Use `Task(agent_type: aris-agent, prompt: \"<same prompt that would go to codex>\")`.\n"
+            f"  No model or reasoning parameters needed per call — user has configured the reviewer model independently.\n"
+            f"  Hard `mcp__codex__codex` call remains as fallback when `aris-agent` is unavailable.\n"
+        ),
+        (
+            f"\n{LEGACY_PATCH_MARKERS[1]}\n"
+            f"**If `Task(agent_type: gpt-reviewer)` is available (ZCode default):**\n"
+            f"  Use `Task(agent_type: gpt-reviewer, prompt: \"<same prompt that would go to codex>\")`.\n"
+            f"  No model or reasoning parameters needed per call — the reviewer model is treated as sharing the agent's name.\n"
+            f"  Hard `mcp__codex__codex` call remains as fallback when `gpt-reviewer` is unavailable.\n"
+        ),
+    ]
     for skill_name in PATCH_TARGET_SKILLS:
         skill_file = project_path / ".zcode" / "skills" / skill_name / "SKILL.md"
         if not skill_file.is_file():
@@ -838,31 +861,29 @@ def apply_zcode_skill_patches(project_path: Path, dry_run: bool):
         if ZCODE_PATCH_MARKER in text:
             skipped += 1
             continue
-        if LEGACY_PATCH_MARKER in text:
-            # Replace the legacy aris-agent block with the gpt-reviewer block.
-            legacy_block = (
-                f"\n{LEGACY_PATCH_MARKER}\n"
-                f"**If `Task(agent_type: aris-agent)` is available (ZCode default):**\n"
-                f"  Use `Task(agent_type: aris-agent, prompt: \"<same prompt that would go to codex>\")`.\n"
-                f"  No model or reasoning parameters needed per call — user has configured the reviewer model independently.\n"
-                f"  Hard `mcp__codex__codex` call remains as fallback when `aris-agent` is unavailable.\n"
-            )
+        migrated_here = False
+        for legacy_block in legacy_blocks:
             if legacy_block in text:
                 if dry_run:
-                    print(f"  (dry-run) would migrate {skill_name}/SKILL.md (aris-agent -> gpt-reviewer)")
-                    continue
-                text = text.replace(legacy_block, _gpt_reviewer_block(), 1)
+                    print(f"  (dry-run) would migrate {skill_name}/SKILL.md (-> gpt-worker)")
+                    migrated_here = True
+                    break
+                text = text.replace(legacy_block, new_block, 1)
                 skill_file.write_text(text, encoding="utf-8")
                 migrated += 1
-                continue
+                migrated_here = True
+                break
+        if migrated_here:
+            continue
+        if any(m in text for m in LEGACY_PATCH_MARKERS):
             # Legacy marker present but block text differs (user edited) — leave alone.
             warn(f"{skill_name}/SKILL.md has legacy marker with custom text; leaving alone")
             skipped += 1
             continue
-        # Find the Reviewer Calling Convention section and append a gpt-reviewer branch.
+        # Find the Reviewer Calling Convention section and append a gpt-worker branch.
         # Strategy: after the "If REVIEWER_BACKEND = `codex`:" block (or `manual` block),
         # insert an additional ZCode branch. Use a marker so future runs are idempotent.
-        patch_block = _gpt_reviewer_block()
+        patch_block = new_block
         # Insertion point must be AFTER the frontmatter close (second `---` line):
         # markers like mcp__manual_review__review_reply may appear inside the
         # frontmatter's allowed-tools line, and patching there corrupts YAML.
@@ -914,7 +935,7 @@ def apply_zcode_skill_patches(project_path: Path, dry_run: bool):
                 else:
                     print(f"  (dry-run) would patch {skill_name}/SKILL.md (append)")
     if patched or skipped or migrated:
-        print(f"  Patched {patched} SKILL.md files for ZCode gpt-reviewer ({skipped} already patched, {migrated} migrated from aris-agent, {len(PATCH_TARGET_SKILLS)} targets)")
+        print(f"  Patched {patched} SKILL.md files for ZCode gpt-worker ({skipped} already patched, {migrated} migrated, {len(PATCH_TARGET_SKILLS)} targets)")
 
 
 def ensure_global_pointer(repo: Path, dry_run: bool):

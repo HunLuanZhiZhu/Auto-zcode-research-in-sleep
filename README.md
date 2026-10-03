@@ -1,12 +1,54 @@
-[中文版 README](README_ch.md) | English
+<div align="center">
 
----
+<img src="./assets/aris-zcode-banner.svg" width="100%" alt="Auto Research in Sleep — ARIS ZCode Port" />
 
-# Auto-zcode-research-in-sleep (ARIS ZCode Port)
+<br/>
 
-> This repository is a ZCode port (wrapper) of [Auto-claude-code-research-in-sleep (ARIS)](./Auto-claude-code-research-in-sleep). The upstream project is never modified; capabilities are distributed to paper projects via hard copy, so each project can be customized independently.
+<a href="./README_ch.md"><img src="https://img.shields.io/badge/中文文档-README__ch.md-2563EB?style=for-the-badge" alt="Chinese README"/></a>
+<a href="https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep"><img src="https://img.shields.io/badge/Upstream-ARIS-181717?style=for-the-badge&logo=github" alt="Upstream ARIS"/></a>
+<img src="https://img.shields.io/badge/ZCode-port-7C3AED?style=for-the-badge" alt="ZCode port"/>
+<img src="https://img.shields.io/badge/install-project--local-059669?style=for-the-badge" alt="Project-local install"/>
 
-Upstream: `Auto-claude-code-research-in-sleep` — a full research-lifecycle framework driven by 86 composable Markdown skills (idea → experiment → writing → review → rebuttal), with cross-model adversarial collaboration (Executor writes, Reviewer reviews).
+<br/><br/>
+
+**A ZCode-oriented port and distribution wrapper for ARIS research workflows.**
+
+</div>
+
+> [!IMPORTANT]
+> This repository adapts **[ARIS — Auto-claude-code-research-in-sleep](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep)** for ZCode.  
+> The upstream repository is intentionally not committed into this wrapper; clone it locally into <code>Auto-claude-code-research-in-sleep/</code> before installation.
+
+<table>
+<tr>
+<td width="33%" valign="top"><h3>📦 Project-local skills</h3><p>Install independent copies into each paper repository so prompts and workflows can diverge safely.</p></td>
+<td width="33%" valign="top"><h3>🤖 Cross-model review</h3><p>Prefer a ZCode-native <code>gpt-reviewer</code> path while retaining upstream reviewer fallbacks.</p></td>
+<td width="33%" valign="top"><h3>🔄 Reconcile upstream</h3><p>Re-align managed files with upstream updates without silently overwriting paper-specific changes.</p></td>
+</tr>
+</table>
+
+<div align="center">
+
+**Upstream ARIS → ZCode adapter → independent paper-local workflow**
+
+</div>
+
+### Local setup
+
+~~~bash
+git clone https://github.com/HunLuanZhiZhu/Auto-zcode-research-in-sleep.git
+cd Auto-zcode-research-in-sleep
+git clone https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep.git
+~~~
+
+Then install into a paper project:
+
+~~~bash
+python init.py D:/AIWorkSpace/my-paper --all --quiet
+~~~
+
+> [!WARNING]
+> The main skill distribution / reviewer adaptation path is the supported core. Hook lifecycle integration is still marked incomplete in the migration-status section below.
 
 ---
 

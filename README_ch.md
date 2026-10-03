@@ -1,12 +1,54 @@
-[English](README.md) | 中文版
+<div align="center">
 
----
+<img src="./assets/aris-zcode-banner.svg" width="100%" alt="Auto Research in Sleep —— ARIS ZCode 移植与分发层" />
 
-# Auto-zcode-research-in-sleep（ARIS ZCode 移植版）
+<br/>
 
-> 本仓库是 [Auto-claude-code-research-in-sleep (ARIS)](./Auto-claude-code-research-in-sleep) 在 ZCode 上的移植封装（wrapper）。不改上游本身，以硬拷贝方式把能力分发到论文项目，允许按项目独立定制。
+<a href="./README.md"><img src="https://img.shields.io/badge/English-README.md-2563EB?style=for-the-badge" alt="English README"/></a>
+<a href="https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep"><img src="https://img.shields.io/badge/上游项目-ARIS-181717?style=for-the-badge&logo=github" alt="Upstream ARIS"/></a>
+<img src="https://img.shields.io/badge/ZCode-移植层-7C3AED?style=for-the-badge" alt="ZCode port"/>
+<img src="https://img.shields.io/badge/安装方式-项目本地化-059669?style=for-the-badge" alt="Project-local install"/>
 
-上游：`Auto-claude-code-research-in-sleep` — 86 个可组合 Markdown Skill 驱动的科研全生命周期框架（idea → 实验 → 写作 → 审稿 → rebuttal），跨模型对抗协作（Executor 写、Reviewer 审）。
+<br/><br/>
+
+**把 ARIS 的科研工作流适配并分发到 ZCode 论文项目中的轻量移植层。**
+
+</div>
+
+> [!IMPORTANT]
+> 本仓库是 **[ARIS — Auto-claude-code-research-in-sleep](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep)** 的 ZCode 适配层。  
+> 上游仓库不会提交进本仓库 Git 历史；使用前需要本地克隆到 <code>Auto-claude-code-research-in-sleep/</code>。
+
+<table>
+<tr>
+<td width="33%" valign="top"><h3>📦 论文项目独立副本</h3><p>每篇论文拥有自己的 Skill 文件，可以独立修改 Prompt 和流程，不影响其他项目。</p></td>
+<td width="33%" valign="top"><h3>🤖 跨模型审稿</h3><p>优先提供 ZCode 原生 <code>gpt-reviewer</code> 路径，同时保留上游 reviewer 回退方案。</p></td>
+<td width="33%" valign="top"><h3>🔄 上游增量对齐</h3><p>通过 reconcile 跟随 ARIS 更新，同时避免静默覆盖论文项目已经修改过的内容。</p></td>
+</tr>
+</table>
+
+<div align="center">
+
+**上游 ARIS → ZCode 适配层 → 每篇论文独立拥有自己的工作流**
+
+</div>
+
+### 本地准备
+
+~~~bash
+git clone https://github.com/HunLuanZhiZhu/Auto-zcode-research-in-sleep.git
+cd Auto-zcode-research-in-sleep
+git clone https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep.git
+~~~
+
+然后安装到论文项目：
+
+~~~bash
+python init.py D:/AIWorkSpace/my-paper --all --quiet
+~~~
+
+> [!WARNING]
+> 当前主要支持的是 Skill 分发、Reviewer 适配和 Reconcile 主链路。Hook 生命周期集成仍按下文迁移状态视为未完全完成。
 
 ---
 
